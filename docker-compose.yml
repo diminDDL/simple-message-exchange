@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  mqtt:
+    build: ./mosquitto
+    ports:
+      - "1883:1883"
+    environment:
+      MQTT_USER: ${MQTT_USER:-mqttuser}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-mqttpassword}
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      POSTGRES_USER: ${DB_USER:-user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-message_exchange}
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-user}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-message_exchange}
+      API_KEY: ${API_KEY:-my-super-secret-api-key}
+    depends_on:
+      - timescaledb
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  bridge:
+    build: ./bridge
+    environment:
+      MQTT_BROKER: mqtt
+      MQTT_PORT: 1883
+      MQTT_USER: ${MQTT_USER:-mqttuser}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-mqttpassword}
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-user}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-message_exchange}
+    depends_on:
+      - mqtt
+      - timescaledb
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  timescaledb_data:
