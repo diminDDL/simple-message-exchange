@@ -96,6 +96,9 @@ When a given device or service wants to register information, it connects to MQT
 python examples/publisher.py
 ```
 
+You can also publish updates over HTTP with `curl`, which is handy for bash scripts. The API will forward the message to MQTT (so live subscribers receive it) and the bridge will store it in TimescaleDB.
+See [examples/publish.sh](examples/publish.sh) for curl-based publish examples.
+
 ### Listening to Live Messages
 To listen to messages in real-time, subscribe to specific topics via MQTT:
 ```bash

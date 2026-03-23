@@ -1,11 +1,15 @@
 from fastapi import FastAPI, HTTPException, Query, Depends, Security
 from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel, Field
+from typing import Any, Dict
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 import uvicorn
 import time
 import logging
+import json
+import paho.mqtt.client as mqtt
 
 app = FastAPI(title="Message Exchange API")
 logging.basicConfig(level=logging.INFO)
@@ -17,8 +21,17 @@ DB_USER = os.getenv("DB_USER", "user")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
 DB_NAME = os.getenv("DB_NAME", "message_exchange")
 API_KEY = os.getenv("API_KEY", "my-super-secret-api-key")
+MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")
+MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
+MQTT_USER = os.getenv("MQTT_USER", "mqttuser")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "mqttpassword")
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+class PublishRequest(BaseModel):
+    topic: str = Field(..., min_length=1)
+    message: Dict[str, Any]
+    retain: bool = True
 
 def get_api_key(api_key: str = Security(api_key_header)):
     if not api_key or api_key != API_KEY:
@@ -38,6 +51,22 @@ def get_db_connection():
     except psycopg2.OperationalError as e:
         logger.error(f"Database connection error: {e}")
         raise HTTPException(status_code=503, detail="Database connection failed")
+
+def publish_to_mqtt(topic: str, message: Dict[str, Any], retain: bool) -> None:
+    try:
+        client = mqtt.Client()
+        if MQTT_USER:
+            client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        payload = json.dumps(message)
+        result = client.publish(topic, payload, retain=retain)
+        result.wait_for_publish()
+        client.disconnect()
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"Publish failed with rc={result.rc}")
+    except Exception as e:
+        logger.error(f"MQTT publish error: {e}")
+        raise HTTPException(status_code=502, detail="MQTT publish failed")
 
 @app.get("/api/messages/recent")
 def get_recent_messages(limit: int = Query(5, ge=1, le=100), api_key: str = Depends(get_api_key)):
@@ -65,6 +94,11 @@ def get_recent_messages(limit: int = Query(5, ge=1, le=100), api_key: str = Depe
     finally:
         cursor.close()
         conn.close()
+
+@app.post("/api/messages/publish")
+def publish_message(request: PublishRequest, api_key: str = Depends(get_api_key)):
+    publish_to_mqtt(request.topic, request.message, request.retain)
+    return {"status": "published", "topic": request.topic, "retain": request.retain}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
