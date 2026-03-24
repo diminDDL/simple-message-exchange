@@ -1,14 +1,15 @@
 services:
   mqtt:
+    container_name: "sme-mqtt"
     build: ./mosquitto
     ports:
       - "1883:1883"
     environment:
       MQTT_USER: ${MQTT_USER:-mqttuser}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-mqttpassword}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
     volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_log:/mosquitto/log
+      - ./data/mqtt_data:/mosquitto/data
+      - ./data/mqtt_log:/mosquitto/log
     restart: unless-stopped
     deploy:
       resources:
@@ -20,13 +21,14 @@ services:
           memory: 64M
 
   timescaledb:
+    container_name: "sme-db"
     image: timescale/timescaledb:latest-pg15
     environment:
       POSTGRES_USER: ${DB_USER:-user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME:-message_exchange}
     volumes:
-      - timescaledb_data:/var/lib/postgresql/data
+      - ./data/db_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
     deploy:
@@ -36,6 +38,7 @@ services:
           memory: 1G
 
   api:
+    container_name: "sme-api"
     build: ./api
     ports:
       - "8000:8000"
@@ -43,13 +46,13 @@ services:
       DB_HOST: timescaledb
       DB_PORT: 5432
       DB_USER: ${DB_USER:-user}
-      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME:-message_exchange}
-      API_KEY: ${API_KEY:-my-super-secret-api-key}
+      API_KEY: ${API_KEY}
       MQTT_BROKER: mqtt
       MQTT_PORT: 1883
       MQTT_USER: ${MQTT_USER:-mqttuser}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-mqttpassword}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
     depends_on:
       - timescaledb
     restart: unless-stopped
@@ -60,16 +63,17 @@ services:
           memory: 256M
 
   bridge:
+    container_name: "sme-bridge"
     build: ./bridge
     environment:
       MQTT_BROKER: mqtt
       MQTT_PORT: 1883
       MQTT_USER: ${MQTT_USER:-mqttuser}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-mqttpassword}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
       DB_HOST: timescaledb
       DB_PORT: 5432
       DB_USER: ${DB_USER:-user}
-      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME:-message_exchange}
     depends_on:
       - mqtt
@@ -80,8 +84,3 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
-
-volumes:
-  mosquitto_data:
-  mosquitto_log:
-  timescaledb_data:

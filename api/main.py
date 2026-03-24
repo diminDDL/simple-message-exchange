@@ -5,6 +5,7 @@ from typing import Any, Dict
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
+import secrets
 import uvicorn
 import time
 import logging
@@ -17,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 DB_HOST = os.getenv("DB_HOST", "timescaledb")
 DB_PORT = os.getenv("DB_PORT", 5432)
-DB_USER = os.getenv("DB_USER", "user")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+DB_USER = os.environ.get("DB_USER") or "user"
+DB_PASSWORD = os.environ["DB_PASSWORD"]
 DB_NAME = os.getenv("DB_NAME", "message_exchange")
-API_KEY = os.getenv("API_KEY", "my-super-secret-api-key")
+API_KEY = os.environ["API_KEY"]
 MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
-MQTT_USER = os.getenv("MQTT_USER", "mqttuser")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "mqttpassword")
+MQTT_USER = os.environ.get("MQTT_USER") or "mqttuser"
+MQTT_PASSWORD = os.environ["MQTT_PASSWORD"]
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -34,7 +35,7 @@ class PublishRequest(BaseModel):
     retain: bool = True
 
 def get_api_key(api_key: str = Security(api_key_header)):
-    if not api_key or api_key != API_KEY:
+    if not api_key or not secrets.compare_digest(api_key, API_KEY):
         raise HTTPException(status_code=403, detail="Could not validate credentials")
     return api_key
 
@@ -72,28 +73,29 @@ def publish_to_mqtt(topic: str, message: Dict[str, Any], retain: bool) -> None:
 def get_recent_messages(limit: int = Query(5, ge=1, le=100), api_key: str = Depends(get_api_key)):
     conn = get_db_connection()
     try:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        query = """
-            SELECT time, message_id, device_id, message_type, service_name, topic, payload
-            FROM messages
-            ORDER BY time DESC
-            LIMIT %s;
-        """
-        cursor.execute(query, (limit,))
-        rows = cursor.fetchall()
-        
-        # Convert datetime objects to string
-        for row in rows:
-            if 'time' in row and row['time']:
-                row['time'] = row['time'].isoformat()
+        with conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                query = """
+                    SELECT time, message_id, device_id, message_type, service_name, topic, payload
+                    FROM messages
+                    ORDER BY time DESC
+                    LIMIT %s;
+                """
+                cursor.execute(query, (limit,))
+                rows = cursor.fetchall()
                 
-        return {"messages": rows}
+                # Convert datetime objects to string
+                for row in rows:
+                    if 'time' in row and row['time']:
+                        row['time'] = row['time'].isoformat()
+                        
+                return {"messages": rows}
     except psycopg2.Error as e:
         logger.error(f"Database error: {e}")
         raise HTTPException(status_code=500, detail="Database query failed")
     finally:
-        cursor.close()
-        conn.close()
+        if not conn.closed:
+            conn.close()
 
 @app.post("/api/messages/publish")
 def publish_message(request: PublishRequest, api_key: str = Depends(get_api_key)):

@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
-MQTT_USER = os.getenv("MQTT_USER", "mqttuser")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "mqttpassword")
+MQTT_USER = os.environ.get("MQTT_USER") or "mqttuser"
+MQTT_PASSWORD = os.environ["MQTT_PASSWORD"]
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", 5432)
-DB_USER = os.getenv("DB_USER", "user")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+DB_USER = os.environ.get("DB_USER") or "user"
+DB_PASSWORD = os.environ["DB_PASSWORD"]
 DB_NAME = os.getenv("DB_NAME", "message_exchange")
 
 def get_db_connection():
@@ -43,6 +43,11 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     try:
+        # Prevent JSON bomb / huge payload DoS
+        if len(msg.payload) > 1024 * 512:  # 512KB limit
+            logger.warning(f"Payload too large from topic {msg.topic}. Skipping.")
+            return
+
         payload_str = msg.payload.decode('utf-8')
         data = json.loads(payload_str)
         
