@@ -27,6 +27,8 @@ services:
       POSTGRES_USER: ${DB_USER:-user}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME:-message_exchange}
+      TS_TUNE_MEMORY: "1GB"
+      TS_TUNE_NUM_CPUS: "1"
     volumes:
       - ./data/db_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
