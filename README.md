@@ -119,7 +119,7 @@ docker compose up -d --build
 
 ## How to use (Examples)
 
-The `examples/` directory contains Python scripts showing how to talk to both the real-time MQTT broker and the HTTP Historical API.
+The `examples` directory contains Python scripts showing how to talk to both the real-time MQTT broker and the HTTP Historical API.
 
 First, install the example dependencies:
 ```bash
@@ -134,7 +134,7 @@ python examples/publisher.py
 ```
 
 You can also publish updates over HTTP with `curl`, which is handy for bash scripts. The API will forward the message to MQTT (so live subscribers receive it) and the bridge will store it in TimescaleDB.
-See [examples/publish.sh](blob/main/examples/publish.sh) for curl-based publish examples.
+See [examples/publish.sh](examples/publish.sh) for curl-based publish examples.
 
 ### Listening to Live Messages
 To listen to messages in real-time, subscribe to specific topics via MQTT:
