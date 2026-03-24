@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Turn into hypertable
 SELECT create_hypertable('messages', 'time');
 
--- Data retention policy (30 days cleanup)
-SELECT add_retention_policy('messages', INTERVAL '30 days');
+-- Optional data retention policy (30 days cleanup)
+-- SELECT add_retention_policy('messages', INTERVAL '30 days');
