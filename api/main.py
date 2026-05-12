@@ -69,6 +69,7 @@ def publish_to_mqtt(topic: str, message: Dict[str, Any], retain: bool) -> None:
         logger.error(f"MQTT publish error: {e}")
         raise HTTPException(status_code=502, detail="MQTT publish failed")
 
+# For getting up to 100 recent messages, without pagination for simplicity
 @app.get("/api/messages/recent")
 def get_recent_messages(limit: int = Query(5, ge=1, le=100), api_key: str = Depends(get_api_key)):
     conn = get_db_connection()
@@ -97,10 +98,83 @@ def get_recent_messages(limit: int = Query(5, ge=1, le=100), api_key: str = Depe
         if not conn.closed:
             conn.close()
 
-@app.post("/api/messages/publish")
-def publish_message(request: PublishRequest, api_key: str = Depends(get_api_key)):
-    publish_to_mqtt(request.topic, request.message, request.retain)
-    return {"status": "published", "topic": request.topic, "retain": request.retain}
+# Function to get list of distinct topics from the database, with pagination support
+@app.get("/api/topics/list")
+def list_topics(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), api_key: str = Depends(get_api_key)):
+    conn = get_db_connection()
+    try:
+        with conn:
+            # First check total count of topics for pagination info
+            total_count = 0
+            with conn.cursor() as cursor:
+                count_query = "SELECT COUNT(DISTINCT topic) FROM messages;"
+                cursor.execute(count_query)
+                fetched = cursor.fetchone()
+                if fetched:
+                    total_count = fetched[0]
+
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT DISTINCT topic
+                    FROM messages
+                    ORDER BY topic
+                    LIMIT %s OFFSET %s;
+                """
+                cursor.execute(query, (limit, offset))
+                topics = [row[0] for row in cursor.fetchall()]
+
+            if not topics and total_count > 0:
+                return {"topics": [], "total_count": total_count, "message": "No more topics available, offset exceeds total count."}
+            
+            return {"topics": topics, "total_count": total_count}
+    except psycopg2.Error as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail="Database query failed")
+    finally:
+        if not conn.closed:
+            conn.close()
+
+# Function to get messages by topic, with pagination support
+@app.get("/api/messages/get")
+def get_messages_by_topic(topic: str = Query(..., min_length=1, max_length=1024), limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), api_key: str = Depends(get_api_key)):
+    conn = get_db_connection()
+    try:
+        with conn:
+            # First check total count of messages for the topic for pagination info
+            total_count = 0
+            with conn.cursor() as cursor:
+                count_query = "SELECT COUNT(*) FROM messages WHERE topic = %s;"
+                cursor.execute(count_query, (topic,))
+                fetched = cursor.fetchone()
+                if fetched:
+                    total_count = fetched[0]
+
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                query = """
+                    SELECT time, message_id, device_id, message_type, service_name, topic, payload
+                    FROM messages
+                    WHERE topic = %s
+                    ORDER BY time DESC
+                    LIMIT %s OFFSET %s;
+                """
+                cursor.execute(query, (topic, limit, offset))
+                rows = cursor.fetchall()
+                
+                # Convert datetime objects to string
+                for row in rows:
+                    if 'time' in row and row['time']:
+                        row['time'] = row['time'].isoformat()
+
+            if not rows and total_count > 0:
+                return {"messages": [], "total_count": total_count, "message": "No more messages available for this topic, offset exceeds total count."}
+            
+            return {"messages": rows, "total_count": total_count}
+    except psycopg2.Error as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail="Database query failed")
+    finally:
+        if not conn.closed:
+            conn.close()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
