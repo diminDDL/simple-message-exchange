@@ -69,6 +69,11 @@ def publish_to_mqtt(topic: str, message: Dict[str, Any], retain: bool) -> None:
         logger.error(f"MQTT publish error: {e}")
         raise HTTPException(status_code=502, detail="MQTT publish failed")
 
+@app.post("/api/messages/publish")
+def publish_message(request: PublishRequest, api_key: str = Depends(get_api_key)):
+    publish_to_mqtt(request.topic, request.message, request.retain)
+    return {"status": "published", "topic": request.topic, "retain": request.retain}
+
 # For getting up to 100 recent messages, without pagination for simplicity
 @app.get("/api/messages/recent")
 def get_recent_messages(limit: int = Query(5, ge=1, le=100), api_key: str = Depends(get_api_key)):
